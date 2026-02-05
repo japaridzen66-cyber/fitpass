@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fitpass QR Verify</title>
+
+  <!-- QR Scanner -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+  <style>
+    body{
+      margin:0;
+      background:#000;
+      color:#fff;
+      font-family:system-ui,Arial,sans-serif;
+      height:100vh;
+      overflow:hidden;
+    }
+
+    .app{
+      width:100%;
+      height:100vh;
+      position:relative;
+      background:black;
+    }
+
+    /* Camera */
+    video{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      background:black;
+    }
+
+    /* Orange verification ring */
+    .ring{
+      position:absolute;
+      inset:0;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      pointer-events:none;
+      opacity:0;
+      transition:.4s ease;
+    }
+
+    .ring.active{
+      opacity:1;
+    }
+
+    .circle{
+      width:140px;
+      height:140px;
+      border-radius:50%;
+      border:4px solid #f97316;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      transform:scale(.6);
+      animation:ringIn .4s ease forwards;
+    }
+
+    @keyframes ringIn{
+      to{transform:scale(1)}
+    }
+
+    .spinner{
+      width:55px;
+      height:55px;
+      border-radius:50%;
+      border:4px solid rgba(255,255,255,.2);
+      border-top:4px solid white;
+      animation:spin .9s linear infinite;
+    }
+
+    @keyframes spin{
+      to{transform:rotate(360deg)}
+    }
+
+    /* Result screen */
+    .result{
+      position:absolute;
+      inset:0;
+      background:#000;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      align-items:center;
+      opacity:0;
+      pointer-events:none;
+      transition:.4s ease;
+    }
+
+    .result.show{
+      opacity:1;
+      pointer-events:auto;
+    }
+
+    /* Green check (from your example) */
+    .check{
+      width:150px;
+      height:150px;
+      border-radius:50%;
+      border:6px solid #00ff6a;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      font-size:70px;
+      color:#00ff6a;
+      opacity:0;
+      transform:scale(0.5);
+      transition:all 0.6s ease;
+    }
+
+    .check.show{
+      opacity:1;
+      transform:scale(1);
+    }
+
+    .check.hide{
+      opacity:0;
+      transform:scale(1.4);
+    }
+
+    .main{
+      margin-top:18px;
+      font-size:22px;
+      font-weight:600;
+      opacity:0;
+      animation:fadeUp .4s ease .4s forwards;
+    }
+
+    .sub{
+      margin-top:6px;
+      font-size:14px;
+      color:#aaa;
+      opacity:0;
+      animation:fadeUp .4s ease .6s forwards;
+    }
+
+    @keyframes fadeUp{
+      from{opacity:0;transform:translateY(12px)}
+      to{opacity:1;transform:translateY(0)}
+    }
+
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Camera -->
+  <video id="video" autoplay playsinline></video>
+
+  <!-- Verification ring -->
+  <div class="ring" id="ring">
+    <div class="circle">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div class="result" id="result">
+    <div class="check" id="check">✔</div>
+    <div class="main">დაფიქსირდა წარმატებით</div>
+    <div class="sub">ვიზიტი მზად არის</div>
+  </div>
+
+</div>
+
+<script>
+
+const video = document.getElementById("video");
+const ring = document.getElementById("ring");
+const result = document.getElementById("result");
+const check = document.getElementById("check");
+
+let stream;
+let scanning = true;
+let locked = false;
+
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d");
+
+/* Start Camera */
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"environment"}
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    scanLoop();
+
+  }catch(e){
+    alert("კამერაზე წვდომა ვერ მოხერხდა");
+  }
+}
+
+startCamera();
+
+/* Scan Loop */
+function scanLoop(){
+
+  if(!scanning) return;
+
+  if(video.readyState === video.HAVE_ENOUGH_DATA){
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+
+    const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+
+    const code = jsQR(img.data,img.width,img.height);
+
+    if(code && !locked){
+      locked = true;
+      scanning = false;
+      onDetect(code.data);
+      return;
+    }
+  }
+
+  requestAnimationFrame(scanLoop);
+}
+
+/* On QR Detected */
+function onDetect(data){
+
+  console.log("QR:",data);
+
+  // Show orange ring
+  ring.classList.add("active");
+
+  // After verification
+  setTimeout(()=>{
+
+    ring.classList.remove("active");
+
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+    }
+
+    result.classList.add("show");
+
+    // Green check animation
+    setTimeout(()=>{
+      check.classList.add("show");
+    },200);
+
+    setTimeout(()=>{
+      check.classList.add("hide");
+    },2500);
+
+  },1600);
+
+  // Restart
+  setTimeout(()=>{
+
+    result.classList.remove("show");
+    check.classList.remove("show","hide");
+
+    locked = false;
+    scanning = true;
+    startCamera();
+
+  },5500);
+}
+
+</script>
+
+</body>
+</html>
